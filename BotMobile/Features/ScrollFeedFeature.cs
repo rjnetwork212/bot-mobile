@@ -13,6 +13,8 @@ public class ScrollFeedFeature : IBotFeature
     public string Id => "scroll_feed";
     public string Name => "Scroll Feed";
     public string Description => "Scroll feed beberapa kali dengan jeda acak.";
+    public bool DefaultEnabled => false;
+
     public (string, string, string)[] ParamDefs => new[]
     {
         ("Count", "Jumlah scroll", "5"),
@@ -20,7 +22,7 @@ public class ScrollFeedFeature : IBotFeature
         ("MaxDelayMs", "Jeda max (ms)", "2500"),
     };
 
-    public async Task RunAsync(IPage page, Account acc, FeatureConfig cfg, Action<string> log)
+    public async Task RunAsync(IPage page, Account acc, FeatureConfig cfg, Action<string> log, RunFlags flags)
     {
         var count = Math.Clamp(cfg.GetInt("Count", 5), 1, 50);
         var min = Math.Max(200, cfg.GetInt("MinDelayMs", 800));

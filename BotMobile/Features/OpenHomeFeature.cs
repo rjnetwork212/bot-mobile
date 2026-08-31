@@ -11,9 +11,11 @@ public class OpenHomeFeature : IBotFeature
     public string Id => "open_home";
     public string Name => "Buka Beranda";
     public string Description => "Buka m.facebook.com (home feed).";
+    public bool DefaultEnabled => false;
+
     public (string, string, string)[] ParamDefs => new[] { ("WaitSec", "Tunggu setelah load (detik)", "3") };
 
-    public async Task RunAsync(IPage page, Account acc, FeatureConfig cfg, Action<string> log)
+    public async Task RunAsync(IPage page, Account acc, FeatureConfig cfg, Action<string> log, RunFlags flags)
     {
         foreach (var url in new[] { "https://m.facebook.com/home.php", "https://www.facebook.com/" })
         {

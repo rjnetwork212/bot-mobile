@@ -11,13 +11,15 @@ public class OpenProfileFeature : IBotFeature
     public string Id => "open_profile";
     public string Name => "Buka Profil";
     public string Description => "Kunjungi profil UID (dari menu UID), berurutan.";
+    public bool DefaultEnabled => false;
+
     public (string, string, string)[] ParamDefs => new[]
     {
         ("MaxUids", "Maks profil per akun", "3"),
         ("WaitSec", "Tunggu per profil (detik)", "4"),
     };
 
-    public async Task RunAsync(IPage page, Account acc, FeatureConfig cfg, Action<string> log)
+    public async Task RunAsync(IPage page, Account acc, FeatureConfig cfg, Action<string> log, RunFlags flags)
     {
         var ctx = BotData.Context;
         var max = Math.Clamp(cfg.GetInt("MaxUids", 3), 1, 50);

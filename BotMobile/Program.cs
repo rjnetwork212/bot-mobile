@@ -15,7 +15,7 @@ internal static class Program
             SelfTest.Run();
             return;
         }
-        if (args.Length > 0 && (args[0] == "--import" || args[0] == "--login" || args[0] == "--probe" || args[0] == "--probe-login" || args[0] == "--run"))
+        if (args.Length > 0 && (args[0] == "--import" || args[0] == "--login" || args[0] == "--probe" || args[0] == "--probe-login" || args[0] == "--probe-graphql" || args[0] == "--probe-cookie" || args[0] == "--probe-token" || args[0] == "--probe-traffic" || args[0] == "--run"))
         {
             Cli.Run(args).GetAwaiter().GetResult();
             return;
@@ -71,6 +71,30 @@ public static class Cli
                 bot.Shutdown();
                 return;
             }
+            case "--probe-graphql":
+            {
+                await GraphQLProbe.Run(args.Length > 1 ? args[1] : "");
+                bot.Shutdown();
+                return;
+            }
+            case "--probe-traffic":
+            {
+                await TrafficProbe.Run(args.Length > 1 ? args[1] : "");
+                bot.Shutdown();
+                return;
+            }
+            case "--probe-token":
+            {
+                await TokenProbe.Run(args.Length > 1 ? args[1] : "");
+                bot.Shutdown();
+                return;
+            }
+            case "--probe-cookie":
+            {
+                await CookieProbe.Run(args.Length > 1 ? args[1] : "");
+                bot.Shutdown();
+                return;
+            }
             case "--run":
             {
                 // run engine penuh (login + fitur) untuk 1 akun (default: akun pertama)
@@ -80,7 +104,7 @@ public static class Cli
                 var features = FeatureStateStore.Load();
                 if (features.Count == 0)
                 {
-                    features = FeatureRegistry.All.Select((f, i) => new FeatureConfig { FeatureId = f.Id, Enabled = f.Id != "post_status", Order = i }).ToList();
+                    features = FeatureRegistry.All.Select((f, i) => new FeatureConfig { FeatureId = f.Id, Enabled = f.DefaultEnabled, Order = i }).ToList();
                     FeatureStateStore.Save(features);
                 }
                 var engine = new BotEngine();

@@ -34,38 +34,45 @@ public class BotEngine
         try
         {
             var browser = await GetBrowserAsync();
-            var page = await browser.NewPageAsync();
+            // pakai tab yang ada (about:blank bawaan) — NewPageAsync bisa "Failed to open a new tab"
+            var existing = await browser.PagesAsync();
+            var page = existing.FirstOrDefault(p => p.Url == "about:blank") ?? await browser.NewPageAsync();
             try
             {
                 await FacebookLogin.SetupMobileAsync(page, acc.Uid);
                 Log?.Invoke($"[{acc.Uid}] device={Fingerprint.DeviceFor(acc.Uid).Model} (FB_IAB)");
 
                 // 1) login: cookies → password
-                bool loggedIn = await FacebookLogin.TryCookieLoginAsync(page, acc, m => Log?.Invoke($"[{acc.Uid}] {m}"));
+                bool loggedIn = false;
+                try
+                {
+                    loggedIn = await FacebookLogin.TryCookieLoginAsync(page, acc, m => Log?.Invoke($"[{acc.Uid}] {m}"));
+                }
+                catch (Exception ex)
+                {
+                    Log?.Invoke($"[{acc.Uid}] cookie login error: {ex.Message.Split('\n')[0]}");
+                }
                 if (loggedIn)
                 {
                     acc.Status = "CookieOk";
                 }
+                else if (string.IsNullOrWhiteSpace(acc.Password))
+                {
+                    acc.Status = "NoCookies";
+                }
                 else
                 {
                     Log?.Invoke($"[{acc.Uid}] cookies gagal/expired → password");
-                    if (string.IsNullOrWhiteSpace(acc.Password))
+                    var (ok, outcome) = await FacebookLogin.TryPasswordLoginAsync(page, acc, m => Log?.Invoke($"[{acc.Uid}] {m}"));
+                    acc.Status = outcome switch
                     {
-                        acc.Status = "NoCookies";
-                    }
-                    else
-                    {
-                        var (ok, outcome) = await FacebookLogin.TryPasswordLoginAsync(page, acc, m => Log?.Invoke($"[{acc.Uid}] {m}"));
-                        acc.Status = outcome switch
-                        {
-                            "ok" => "PasswordOk",
-                            "checkpoint" => "Checkpoint",
-                            "wrongpass" => "WrongPassword",
-                            "blocked" => "Blocked",
-                            _ => "Failed",
-                        };
-                        loggedIn = ok;
-                    }
+                        "ok" => "PasswordOk",
+                        "checkpoint" => "Checkpoint",
+                        "wrongpass" => "WrongPassword",
+                        "blocked" => "Blocked",
+                        _ => "Failed",
+                    };
+                    loggedIn = ok;
                 }
 
                 acc.LastLogin = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
@@ -73,15 +80,21 @@ public class BotEngine
                 {
                     acc.Cookies = await FacebookLogin.DumpCookiesAsync(page);
                     Log?.Invoke($"[{acc.Uid}] login OK ({acc.Status}) → run fitur");
-                    // 2) fitur berurutan
+                    // 2) fitur berurutan; berhenti bila session expired di tengah jalan
+                    var flags = new Features.RunFlags();
                     foreach (var cfg in featureOrder.Where(f => f.Enabled))
                     {
+                        if (flags.SessionExpired)
+                        {
+                            Log?.Invoke($"[{acc.Uid}] skip {cfg.FeatureId} (session mati)");
+                            continue;
+                        }
                         var feat = FeatureRegistry.Find(cfg.FeatureId);
                         if (feat == null) continue;
                         try
                         {
                             Log?.Invoke($"[{acc.Uid}] ▶ {feat.Name}");
-                            await feat.RunAsync(page, acc, cfg, m => Log?.Invoke($"[{acc.Uid}]   {m}"));
+                            await feat.RunAsync(page, acc, cfg, m => Log?.Invoke($"[{acc.Uid}]   {m}"), flags);
                         }
                         catch (Exception ex)
                         {

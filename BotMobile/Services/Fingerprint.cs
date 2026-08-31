@@ -2,7 +2,7 @@ using BotMobile.Models;
 
 namespace BotMobile.Services;
 
-/// <summary>Fingerprint mobile "seperti APK FB": UA FB IAB + viewport Android.</summary>
+/// <summary>Fingerprint mobile "seperti APK FB": UA FB IAB + UA-CH metadata + viewport Android.</summary>
 public static class Fingerprint
 {
     public record Device(string Model, int W, int H, double Dpr);
@@ -32,6 +32,27 @@ public static class Fingerprint
         $"Mozilla/5.0 (Linux; Android 13; {d.Model} Build/TP1A.220624.014; wv) " +
         $"AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/124.0.0.0 Mobile Safari/537.36 " +
         $"[FB_IAB/FB4A;FBAV/460.0.0.60.120;]";
+
+    /// <summary>
+    /// WAJIB kirim userAgentMetadata: Chrome 151+ kirim Sec-CH-UA (client hints) terpisah
+    /// dari UA string. Tanpa ini FB lihat Sec-CH-UA-Mobile:?0 + platform desktop → serve
+    /// DESKTOP walau UA string Android (bug "tampilan bukan mobile", hasil uji nyata).
+    /// </summary>
+    public static PuppeteerSharp.UserAgentMetadata BuildUaMetadata(Device d) => new()
+    {
+        Mobile = true,
+        Platform = "Android",
+        PlatformVersion = "13.0.0",
+        Architecture = "",
+        Bitness = "",
+        Model = d.Model,
+        Brands = new[]
+        {
+            new PuppeteerSharp.UserAgentBrandVersion { Brand = "Not A(Brand", Version = "99" },
+            new PuppeteerSharp.UserAgentBrandVersion { Brand = "Chromium", Version = "124" },
+            new PuppeteerSharp.UserAgentBrandVersion { Brand = "Google Chrome", Version = "124" },
+        },
+    };
 }
 
 /// <summary>Loader embedded stealth.js.</summary>

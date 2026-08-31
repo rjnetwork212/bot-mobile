@@ -46,17 +46,26 @@ public partial class MainWindow : Window
         GridAccounts.ItemsSource = _accounts;
         foreach (var a in _db.GetAll()) _accounts.Add(a);
 
-        // fitur: load state, merge registry (fitur baru otomatis masuk)
+        // fitur: load state, merge registry (fitur baru otomatis masuk; disabled default utk fitur mutasi)
         var saved = FeatureStateStore.Load();
+        var savedIds = saved.Select(s => s.FeatureId).ToHashSet();
         int order = 0;
         foreach (var f in FeatureRegistry.All)
         {
-            var cfg = saved.FirstOrDefault(s => s.FeatureId == f.Id)
-                ?? new FeatureConfig { FeatureId = f.Id };
-            cfg.Order = order++;
+            var cfg = saved.FirstOrDefault(s => s.FeatureId == f.Id);
+            if (cfg == null)
+            {
+                cfg = new FeatureConfig { FeatureId = f.Id, Enabled = f.DefaultEnabled };
+                // fitur baru (tidak ada di state lama): sisipkan sebelum fitur legacy post_status
+                cfg.Order = f.Id == "post_status" ? int.MaxValue - 1 : order;
+            }
+            else cfg.Order = order;
             cfg.Params ??= new();
             _featureRows.Add(new FeatureRow { Feature = f, Config = cfg });
+            order++;
         }
+        // normalisasi order
+        for (int k = 0; k < _featureRows.Count; k++) _featureRows[k].Config.Order = k;
         LstFeatures.ItemsSource = _featureRows;
 
         _engine.Log += line => Dispatcher.UIThread.Post(() => AppendLog(line));

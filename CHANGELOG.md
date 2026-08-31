@@ -2,42 +2,48 @@
 
 Format berdasarkan [Keep a Changelog](https://keepachangelog.com/id/1.1.0/).
 
+## [0.4.0] - 2026-08-31
+
+### Added — Port fitur dari Bot_Ngekeng (subagent research 3 area: konten, sosial, infra)
+- **fbhelper.js** (`Resources/`, embedded): port inti `window.__bot` dari Bot_Ngekeng — token scraper, graphql fetch wrapper, addFriend (3 varian payload), confirmFriendRequest, fetchPendingRequests, fetchSuggestions, createGroup, postStatus, setBioText, activateProMode, uploadPhotoGeneric, createStory, setStoryPrivacy, setProfilePic.
+- **FbHelper.cs**: jembatan C# → window.__mfb (inject + call + parse JSON toleran tipe bool/number/string).
+- **PoolDb.cs**: pool target UID & link (port `take_targets`/`take_one_link`) — atomic claim (guard `used_at IS NULL`), mark result, rollback, sweep orphan.
+- **10 fitur bot** (file terpisah di `Features/`): Sambung GraphQL, Add Friend (pool target), Add Suggestions (PYMK), Confirm Friend, Buat Group, Post Status, Upload Story, Foto Profil, Set Bio, Mode Profesional — semuanya daftar di FeatureRegistry + state DB + popup config otomatis.
+- **Fingerprint validasi empiris**: UA-CH metadata (`UserAgentMetadata` mobile=true/Android/model) — tanpa ini Chrome 151 kirim `Sec-CH-UA-Mobile:?0` dan FB serve desktop (bug "tampilan bukan mobile").
+- **Cookie flow benar**: goto origin dulu → CDP `Network.setCookie` → refresh → cek login (page-level `SetCookieAsync` sebelum navigasi pertama tidak masuk jar).
+- **CLI research**: `--probe-cookie`, `--probe-token`, `--probe-traffic` (listen endpoint asli FB).
+
+### Validated (probe & run nyata, bukan asumsi)
+- Login cookies fresh akun_2 → `CookieOk` (UA desktop & mobile dua-duanya dapat session)
+- Buat group → thread_id nyata dibuat (`MessengerGroupCreateMutation` doc 577041672419534)
+- Set bio → `bio_set` (`ProfileCometSetBioMutation` doc 26634540449575467)
+- GraphQL query (FriendingCometRootQuery) → respons JSON Comet valid
+
+### Critical findings (riset, bukan tebakan)
+- **m.facebook mobile web TIDAK punya fb_dtsg** (DTSG stack tidak ada) — pakai `lsd` + `jazoest` dari form input.
+- **Doc_id Comet DITOLAK dari konteks m.facebook** (`error 1357004`) — fitur GraphQL harus jalan di konteks desktop `www/web.facebook.com` (pola sama dengan Bot_Ngekeng yang memang desktop). Fase 1 login = mobile (bentuk APK), fase 2 fitur = tab www (UA desktop).
+- Page-level `SetCookieAsync` sebelum navigasi pertama: cookie tidak masuk jar (dicek via `GetCookiesAsync` pada halaman FB).
+
+### Fixed
+- "Failed to open a new tab" → reuse tab about:blank bawaan Chrome.
+- Login password dihalangi cookie mati yang menempel (halaman render varian saved-login tanpa form) → clear cookies sebelum login password.
+- Parser JSON helper: `{"ok":true}` (boolean) membuat `Dictionary<string,string>` gagal → outcome salah dilaporkan "empty_response" padahal mutasi sukses.
+- `WaitLoginResultAsync` crash "Execution context destroyed" saat login sukses (navigasi di tengah poll) → poll tahan-exception.
+- Tab `about:blank` ekstra.
+
+### Notes
+- Seluruh doc_id rentan di-rotate FB — kini terpusat di `fbhelper.js` (satu file, mudah di-update).
+- `post_status` legacy (UI composer) masih disabled; pakai `Post Status` GraphQL.
+
 ## [0.3.0] - 2026-08-31
-
-### Added
-- **Menu Fitur Bot**: daftar fitur dengan urutan bebas (tombol ▲▼), toggle aktif/nonaktif (checkbox), dan popup konfigurasi per fitur (field otomatis dari definisi fitur). State (urutan/aktif/params) tersimpan di SQLite.
-- **Menu Data Akun**: tabel akun + **Import Bulk** langsung dari textarea (1 akun per baris, tanpa file). Tambah kolom Email & 2FA.
-- **Menu UID**: daftar UID target (1 per baris), tombol "Isi dari Data Akun". Dipakai fitur seperti Buka Profil.
-- **Menu Link**: daftar link target + tombol buka link terpilih.
-- 4 fitur bot built-in (file terpisah di `Features/`): `Buka Beranda`, `Scroll Feed`, `Buka Profil`, `Post Status` (belum aktif — selector composer belum di-probe).
-- Parser akun **auto-detect kolom by pola** (cookie/email/secret-2FA dideteksi dari isi, bukan posisi) — mendukung `uid|pass`, `uid|pass|cookies`, `uid|pass|cookies|secret2fa`, `uid|pass|email|cookies`, `uid|pass|cookies|email`, dan campuran bebas.
-- Probe runner CLI: `--probe <uid>` (dump elemen login/feed) dan `--probe-login <uid>` (uji login password nyata).
-- CLI `--run [uid]`: jalankan engine penuh (login + fitur berurutan).
-- Status akun baru: `Blocked` (rate-limit FB), `NoCookies`.
-
-### Changed
-- Login password dipindah ke `FacebookLogin` dengan klasifikasi hasil tervalidasi probe nyata: `ok` / `checkpoint` / `wrongpass` / `blocked` / `unknown`.
-- Validasi login sukses kini mewajibkan cookie `c_user`+`xs` **dan** URL bukan halaman login (cookie `c_user` ternyata bisa menempel walau session mati — hasil probe).
-- Semua navigation di fitur diberi timeout 30 dtk + fallback agar engine tidak hang.
-- Kode dipisah per fitur/kepentingan: `Features/IBotFeature.cs`, `Fingerprint.cs`, `StealthLoader`, `LoginSelectors.cs`, `FacebookLogin.cs`, `BotEngine.cs`, `ProbeRunner.cs`.
-
-### Validated (probe nyata, bukan asumsi)
-- Selector login m.facebook: `input[name='email']`, `input[name='pass']`, `button[name='login']` ✓
-- Teks rate-limit FB: "You've tried to log in too many times..." → status `Blocked` ✓
-- Akun pertama login via cookies: `CookieOk` tersimpan + cookies diperbarui ✓
-- Akun kedua: password login → `Blocked` (rate-limit FB) ✓
+- Menu Fitur Bot (reorder + toggle + config popup, state SQLite), Data Akun (bulk import), UID, Link.
+- Parser akun auto-detect kolom by pola (cookie/email/2FA).
+- 4 fitur dasar + OpenGraphQlFeature; engine skip fitur setelah session expired.
+- Probe CLI: `--probe`, `--probe-login`, `--run`.
 
 ## [0.2.0] - 2026-08-31
-
-### Added
-- Fingerprint mobile "seperti APK FB": UA `[FB_IAB/FB4A;FBAV/...]` + viewport Android touch (pool 4 device, hash dari UID).
-- Stealth injection (`stealth.js` embedded): `navigator.webdriver`, chrome object, plugins, WebGL, canvas noise.
-- Paralel login max 3 Chrome instance.
+- Fingerprint mobile FB IAB + viewport Android touch (pool 4 device, hash UID).
+- stealth.js embedded; paralel max 3 Chrome.
 
 ## [0.1.0] - 2026-08-31
-
-### Added
-- App GUI .NET 8 murni (tanpa Python): Avalonia 11 (Windows + Linux) + PuppeteerSharp + SQLite.
-- Tabel akun: import/export, tambah/edit/hapus, login cookies → password fallback.
-- Import dari file `akun.txt` format `uid|pass|cookie`.
-- Selftest (`--selftest`): parser + DB roundtrip.
+- App GUI .NET 8 murni (Avalonia + PuppeteerSharp + SQLite), login cookies → password, import/export akun, selftest.

@@ -29,7 +29,8 @@ public static class FacebookLogin
     public static async Task SetupMobileAsync(IPage page, string uid)
     {
         var dev = Fingerprint.DeviceFor(uid);
-        await page.SetUserAgentAsync(Fingerprint.BuildUa(dev));
+        // UA + UA-CH metadata (mobile=true/Android) — tanpa metadata FB serve desktop
+        await page.SetUserAgentAsync(Fingerprint.BuildUa(dev), Fingerprint.BuildUaMetadata(dev));
         await page.SetViewportAsync(new ViewPortOptions
         {
             Width = dev.W, Height = dev.H, DeviceScaleFactor = dev.Dpr,
@@ -42,9 +43,41 @@ public static class FacebookLogin
     public static async Task<bool> TryCookieLoginAsync(IPage page, Account acc, Action<string> log)
     {
         if (string.IsNullOrWhiteSpace(acc.Cookies)) return false;
-        foreach (var (name, value) in ParseCookies(acc.Cookies))
-            await page.SetCookieAsync(new CookieParam { Name = name, Value = value, Domain = ".facebook.com", Path = "/" });
-        log($"cookies ({ParseCookies(acc.Cookies).Count} item)");
+        // WAJIB: goto dulu ke origin FB (page-level SetCookieAsync sebelum navigasi
+        // pertama nyaris selalu gagal masuk jar — hasil CookieProbe: set OK tapi jar 0)
+        try
+        {
+            await page.GoToAsync("https://m.facebook.com/", new NavigationOptions
+            {
+                Timeout = 30000,
+                WaitUntil = new[] { WaitUntilNavigation.DOMContentLoaded },
+            });
+        }
+        catch (NavigationException) { /* abort saat redirect — jar tetap bisa di-set */ }
+
+        var pairs = ParseCookies(acc.Cookies);
+        log($"set {pairs.Count} cookie via CDP");
+        foreach (var (name, value) in pairs)
+        {
+            try
+            {
+                await page.Client.SendAsync("Network.setCookie", new
+                {
+                    name,
+                    value,
+                    domain = ".facebook.com",
+                    path = "/",
+                    secure = true,
+                    httpOnly = false,
+                });
+            }
+            catch (Exception ex)
+            {
+                log($"set {name} gagal: {ex.Message.Split('\n')[0]}");
+            }
+        }
+        log($"cookies ({pairs.Count} item)");
+
         try
         {
             await page.GoToAsync("https://www.facebook.com/", WaitUntilNavigation.DOMContentLoaded);
@@ -61,8 +94,29 @@ public static class FacebookLogin
     public static async Task<(bool Ok, string Outcome)> TryPasswordLoginAsync(IPage page, Account acc, Action<string> log)
     {
         if (string.IsNullOrWhiteSpace(acc.Password)) return (false, "nopassword");
-        await page.GoToAsync("https://m.facebook.com/login/", WaitUntilNavigation.DOMContentLoaded);
-        await page.WaitForSelectorAsync(LoginSelectors.Email, new WaitForSelectorOptions { Timeout = 20000 });
+        // cookie mati yang masih nempel bikin /login/ render varian "saved login" tanpa form
+        // → bersihkan cookies dulu supaya form email/pass standar muncul (hasil probe akun c_user)
+        try { await page.Client.SendAsync("Network.clearBrowserCookies"); } catch { }
+        try
+        {
+            await page.GoToAsync("https://m.facebook.com/", WaitUntilNavigation.DOMContentLoaded);
+        }
+        catch (NavigationException)
+        {
+            // FB kadang abort navigation saat redirect login — form tetap dicek
+        }
+        try
+        {
+            await page.WaitForSelectorAsync(LoginSelectors.Email, new WaitForSelectorOptions { Timeout = 20000 });
+        }
+        catch (WaitTaskTimeoutException)
+        {
+            // form tidak muncul: sudah login (redirect home) atau checkpoint
+            var url = page.Url ?? "";
+            if (url.Contains("checkpoint") || url.Contains("two_step")) return (false, "checkpoint");
+            if (!url.Contains("/login") && await IsLoggedInAsync(page)) return (true, "ok");
+            return (false, "form_not_found");
+        }
         await Task.Delay(800);
         await page.TypeAsync(LoginSelectors.Email, acc.Uid, new TypeOptions { Delay = 50 });
         await page.TypeAsync(LoginSelectors.Pass, acc.Password, new TypeOptions { Delay = 50 });
@@ -84,19 +138,32 @@ public static class FacebookLogin
         for (int i = 0; i < 30; i++)
         {
             await Task.Delay(1000);
-            url = page.Url ?? "";
-            if (url.Contains("checkpoint") || url.Contains("two_step")) break;
-            if (await IsLoggedInAsync(page)) break;
-            text = await page.EvaluateExpressionAsync<string>(
-                "document.body ? document.body.innerText.slice(0, 3000) : ''");
-            if (LoginText.IsBlocked(text) || LoginText.IsWrongPassword(text)) break;
+            try
+            {
+                url = page.Url ?? "";
+                if (url.Contains("checkpoint") || url.Contains("two_step")) break;
+                if (await IsLoggedInAsync(page)) break;
+                text = await page.EvaluateExpressionAsync<string>(
+                    "document.body ? document.body.innerText.slice(0, 3000) : ''");
+                if (LoginText.IsBlocked(text) || LoginText.IsWrongPassword(text)) break;
+            }
+            catch (Exception)
+            {
+                // halaman navigasi di tengah poll (context destroyed) — login kemungkinan sukses,
+                // lanjut poll sampai halaman stabil lalu cek cookie
+            }
         }
+        await Task.Delay(2000); // stabilkan setelah navigasi
         if (url.Contains("checkpoint") || url.Contains("two_step") ||
             await HasSelector(page, LoginSelectors.TfaCode))
             return (false, "checkpoint");
         if (await IsLoggedInAsync(page) && !IsLoginPageUrl(page.Url)) return (true, "ok");
-        text = await page.EvaluateExpressionAsync<string>(
-            "document.body ? document.body.innerText.slice(0, 3000) : ''");
+        try
+        {
+            text = await page.EvaluateExpressionAsync<string>(
+                "document.body ? document.body.innerText.slice(0, 3000) : ''");
+        }
+        catch { text = ""; }
         if (LoginText.IsBlocked(text)) return (false, "blocked");
         if (LoginText.IsWrongPassword(text)) return (false, "wrongpass");
         return (false, "unknown");
