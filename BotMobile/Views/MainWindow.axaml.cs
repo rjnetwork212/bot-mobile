@@ -109,7 +109,7 @@ public partial class MainWindow : Window
 
     // ============ navigasi ============
 
-    private void Navigate(string key)
+    public void Navigate(string key)
     {
         if (!_pages.TryGetValue(key, out var page)) return;
         PageHost.Content = page;

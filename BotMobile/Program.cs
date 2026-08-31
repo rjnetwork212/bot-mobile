@@ -1,4 +1,7 @@
 using Avalonia;
+using Avalonia.Headless;
+using Avalonia.Skia;
+using Avalonia.Threading;
 using BotMobile;
 using BotMobile.Features;
 using BotMobile.Services;
@@ -10,6 +13,11 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (args.Contains("--screenshot"))
+        {
+            ScreenshotRunner.Run();
+            return;
+        }
         if (args.Contains("--selftest"))
         {
             SelfTest.Run();
@@ -25,6 +33,33 @@ internal static class Program
 
     public static AppBuilder BuildAvaloniaApp() =>
         AppBuilder.Configure<App>().UsePlatformDetect().LogToTrace();
+}
+
+public static class ScreenshotRunner
+{
+    // ponytail: headless render 1 frame utk QA visual (Wayland blok screen capture)
+    public static void Run()
+    {
+        var app = AppBuilder.Configure<App>().UseHeadless(new Avalonia.Headless.AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).UseSkia();
+        var lifetime = new Avalonia.Controls.ApplicationLifetimes.ClassicDesktopStyleApplicationLifetime();
+        app.SetupWithLifetime(lifetime);
+        var win = new BotMobile.Views.MainWindow();
+        win.Show();
+        win.Width = 1180; win.Height = 760;
+
+        // pump dispatcher sampai layout+render jalan
+        foreach (var page in new[] { "fitur", "akun", "uid", "link" })
+        {
+            win.Navigate(page);
+            Dispatcher.UIThread.RunJobs();
+            System.Threading.Thread.Sleep(300);
+            var frame = Avalonia.Headless.HeadlessWindowExtensions.CaptureRenderedFrame(win);
+            if (frame == null) { Console.WriteLine($"frame {page} null"); continue; }
+            using var fs = System.IO.File.Create($"/tmp/gui_{page}.png");
+            frame.Save(fs);
+            Console.WriteLine($"screenshot: /tmp/gui_{page}.png");
+        }
+    }
 }
 
 public static class Cli

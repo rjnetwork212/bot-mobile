@@ -98,25 +98,14 @@ public class FiturBotPage : UserControl
             };
             right.Children.Add(combo);
         }
-        else
-        {
-            right.Children.Add(new Border
-            {
-                Background = new SolidColorBrush(Color.Parse("#162238")),
-                CornerRadius = new CornerRadius(3),
-                Padding = new Thickness(7, 2),
-                Child = new TextBlock { Text = row.ModeBadge, FontSize = 9.5, Foreground = new SolidColorBrush(Color.Parse("#849396")) },
-            });
-        }
-
         var toggle = new ToggleSwitch
         {
             IsChecked = enabled,
-            OnContent = "",
-            OffContent = "",
-            MinWidth = 44,
-            Height = 22,
+            OnContent = null,
+            OffContent = null,
+            MinWidth = 40,
             Padding = new Thickness(0),
+            HorizontalContentAlignment = HorizontalAlignment.Center,
         };
         toggle.IsCheckedChanged += (_, _) =>
         {
@@ -138,6 +127,8 @@ public class FiturBotPage : UserControl
         down.Click += (_, _) => Move(row, 1);
         right.Children.Add(down);
 
+        Grid.SetColumn(right, 1); // kanan: kontrol (kiri: teks)
+
         return new Border
         {
             Background = new SolidColorBrush(Color.Parse("#101827")),
@@ -148,11 +139,7 @@ public class FiturBotPage : UserControl
             Child = new Grid
             {
                 ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-                Children =
-                {
-                    new Border { Child = left },
-                    right,
-                },
+                Children = { left, right },
             },
         };
     }
