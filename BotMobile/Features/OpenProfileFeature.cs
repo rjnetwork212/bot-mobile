@@ -12,6 +12,7 @@ public class OpenProfileFeature : IBotFeature
     public string Name => "Buka Profil";
     public string Description => "Kunjungi profil UID (dari menu UID), berurutan.";
     public bool DefaultEnabled => false;
+    public string[] Modes => new[] { FeatureModes.Selector };
 
     public (string, string, string)[] ParamDefs => new[]
     {

@@ -21,9 +21,15 @@ public class AddSuggestionsFeature : IBotFeature
         ("DelayMaxMs", "Jeda max (ms)", "6000"),
     };
     public bool DefaultEnabled => false;
+    public string[] Modes => new[] { FeatureModes.GraphQl, FeatureModes.Selector };
 
     public async Task RunAsync(IPage page, Account acc, FeatureConfig cfg, Action<string> log, RunFlags flags)
     {
+        if (cfg.Get("Metode", FeatureModes.GraphQl) == FeatureModes.Selector)
+        {
+            await RunSelectorAsync(page, acc, cfg, log, flags);
+            return;
+        }
         var max = Math.Clamp(cfg.GetInt("MaxPerRun", 15), 1, 100);
         var rnd = new Random();
         var uids = await FbHelper.FetchSuggestionsAsync(page, cfg.GetInt("FetchCount", 50));
@@ -49,5 +55,38 @@ public class AddSuggestionsFeature : IBotFeature
             await Task.Delay(rnd.Next(cfg.GetInt("DelayMinMs", 2000), cfg.GetInt("DelayMaxMs", 6000)));
         }
         log($"selesai: {ok} sukses, {fail} gagal");
+    }
+
+    // jalur SELECTOR: halaman /friends/suggestions (PYMK), scroll + klik tombol Add
+    private async Task RunSelectorAsync(IPage page, Account acc, FeatureConfig cfg, Action<string> log, RunFlags flags)
+    {
+        var max = Math.Clamp(cfg.GetInt("MaxPerRun", 15), 1, 100);
+        await Selector.UiSelector.GoToAsync(page, "https://m.facebook.com/friends/suggestions");
+        if (page.Url.Contains("/login") || page.Url.Contains("checkpoint"))
+        {
+            flags.SessionExpired = true;
+            log("session mati");
+            return;
+        }
+        var ok = 0; var stale = 0;
+        while (ok < max && stale < 3)
+        {
+            if (flags.SessionExpired) break;
+            if (await Selector.UiSelector.ClickButtonByLabelsAsync(page, Selector.UiSelector.AddFriendLabels))
+            {
+                ok++;
+                stale = 0;
+                log($"[selector] add {ok}/{max}");
+                await Task.Delay(2500);
+                await Selector.UiSelector.ClickButtonByLabelsAsync(page, Selector.UiSelector.DeclineLabels); // tutup toast "permintaan terkirim"
+            }
+            else
+            {
+                stale++;
+                await page.Keyboard.PressAsync("PageDown");
+                await Task.Delay(2000);
+            }
+        }
+        log($"[selector] selesai: {ok} add dari suggestions");
     }
 }

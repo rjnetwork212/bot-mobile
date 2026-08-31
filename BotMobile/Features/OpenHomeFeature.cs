@@ -12,6 +12,7 @@ public class OpenHomeFeature : IBotFeature
     public string Name => "Buka Beranda";
     public string Description => "Buka m.facebook.com (home feed).";
     public bool DefaultEnabled => false;
+    public string[] Modes => new[] { FeatureModes.Selector };
 
     public (string, string, string)[] ParamDefs => new[] { ("WaitSec", "Tunggu setelah load (detik)", "3") };
 

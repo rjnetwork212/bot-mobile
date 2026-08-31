@@ -14,6 +14,7 @@ public class ScrollFeedFeature : IBotFeature
     public string Name => "Scroll Feed";
     public string Description => "Scroll feed beberapa kali dengan jeda acak.";
     public bool DefaultEnabled => false;
+    public string[] Modes => new[] { FeatureModes.Selector };
 
     public (string, string, string)[] ParamDefs => new[]
     {

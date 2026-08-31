@@ -1,117 +1,104 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="BotMobile.Views.MainWindow"
-        Title="Bot Mobile - FB (PuppeteerSharp)"
-        Width="1050" Height="720">
+        Title="Bot Mobile"
+        Width="1180" Height="760" Background="#0A0E17"
+        RequestedThemeVariant="Dark">
 
-  <Grid RowDefinitions="Auto,*,200,Auto" Margin="8">
+  <Window.Resources>
+    <SolidColorBrush x:Key="Bg" Color="#0A0E17" />
+    <SolidColorBrush x:Key="BgPanel" Color="#0D1420" />
+    <SolidColorBrush x:Key="Surface" Color="#101827" />
+    <SolidColorBrush x:Key="SurfaceRaised" Color="#162238" />
+    <SolidColorBrush x:Key="Cyan" Color="#00E5FF" />
+    <SolidColorBrush x:Key="TextDim" Color="#849396" />
+    <SolidColorBrush x:Key="TextMain" Color="#DFE2EF" />
+    <SolidColorBrush x:Key="Green" Color="#39FF14" />
+    <SolidColorBrush x:Key="Amber" Color="#FFB020" />
+    <SolidColorBrush x:Key="Red" Color="#FF4D67" />
+  </Window.Resources>
 
-    <TabControl Grid.Row="0" Height="440">
+  <Grid ColumnDefinitions="220,*">
 
-      <!-- ============ TAB 1: FITUR BOT ============ -->
-      <TabItem Header="Fitur Bot">
-        <Grid Margin="6" ColumnDefinitions="*,Auto">
-          <StackPanel Grid.Column="0" Spacing="6">
-            <TextBlock Text="Urutan &amp; status fitur (geser dengan tombol ▲▼, centang = aktif)" Foreground="Gray" />
-            <ListBox x:Name="LstFeatures" Height="320">
-              <ListBox.ItemTemplate>
-                <DataTemplate>
-                  <Panel>
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                      <CheckBox IsChecked="{Binding Enabled}" Checked="OnFeatureToggle" Unchecked="OnFeatureToggle" />
-                      <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" />
-                      <TextBlock Text="{Binding ParamSummary}" Foreground="Gray" />
-                    </StackPanel>
-                  </Panel>
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
+    <!-- ============ SIDEBAR ============ -->
+    <Border Grid.Column="0" Background="{StaticResource BgPanel}" BorderBrush="#1A2333" BorderThickness="0,0,1,0">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Margin="18,22,16,8">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="◆" FontSize="20" Foreground="{StaticResource Cyan}" />
+            <TextBlock Text="Bot Mobile" FontSize="19" FontWeight="Bold" Foreground="{StaticResource TextMain}" />
           </StackPanel>
-          <StackPanel Grid.Column="1" Spacing="6" Margin="10,0,0,0" VerticalAlignment="Center">
-            <Button x:Name="BtnFeatUp" Content="▲ Naik" Click="OnFeatureUp" />
-            <Button x:Name="BtnFeatDown" Content="▼ Turun" Click="OnFeatureDown" />
-            <Button x:Name="BtnFeatConfig" Content="⚙ Konfigurasi" Click="OnFeatureConfig" />
+          <TextBlock Text="Facebook Automation" FontSize="11" Margin="28,0,0,0" Foreground="{StaticResource TextDim}" />
+        </StackPanel>
+
+        <StackPanel x:Name="NavPanel" DockPanel.Dock="Top" Margin="0,18,0,0" Spacing="2">
+          <Button x:Name="NavFitur" Click="OnNav" Tag="fitur" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                  Background="Transparent" BorderThickness="0,0,0,0" Padding="18,11" FontSize="14" FontWeight="SemiBold">
+            <TextBlock Text="Fitur Bot" />
+          </Button>
+          <Button x:Name="NavAkun" Click="OnNav" Tag="akun" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                  Background="Transparent" Padding="18,11" FontSize="14">
+            <TextBlock Text="Data Akun" />
+          </Button>
+          <Button x:Name="NavUid" Click="OnNav" Tag="uid" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                  Background="Transparent" Padding="18,11" FontSize="14">
+            <TextBlock Text="UID" />
+          </Button>
+          <Button x:Name="NavLink" Click="OnNav" Tag="link" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                  Background="Transparent" Padding="18,11" FontSize="14">
+            <TextBlock Text="Link" />
+          </Button>
+        </StackPanel>
+
+        <Border DockPanel.Dock="Bottom" Margin="14" Padding="10,8" Background="{StaticResource Surface}"
+                BorderBrush="#1A2333" BorderThickness="1" CornerRadius="4">
+          <StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <Ellipse Width="8" Height="8" Fill="{StaticResource Green}" />
+              <TextBlock x:Name="TxtChromeChip" Text="Chrome: OK" FontSize="11" Foreground="{StaticResource TextDim}" />
+            </StackPanel>
+            <TextBox x:Name="TxtChrome" Watermark="(auto-detect)" FontSize="11" Margin="0,6,0,4" />
+            <Button x:Name="BtnSaveChrome" Content="Simpan Path" Click="OnSaveChrome" FontSize="11"
+                    HorizontalAlignment="Stretch" Height="26" />
           </StackPanel>
-        </Grid>
-      </TabItem>
+        </Border>
+      </DockPanel>
+    </Border>
 
-      <!-- ============ TAB 2: DATA AKUN ============ -->
-      <TabItem Header="Data Akun">
-        <Grid Margin="6" RowDefinitions="Auto,*,Auto,220,Auto">
-          <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6" Margin="0,0,0,6">
-            <Button x:Name="BtnAdd" Content="Tambah" Click="OnAdd" />
-            <Button x:Name="BtnEdit" Content="Edit" Click="OnEdit" />
-            <Button x:Name="BtnDelete" Content="Hapus" Click="OnDelete" />
-            <Separator Width="10" />
-            <Button x:Name="BtnLoginSel" Content="Login Selected" Click="OnLoginSelected" />
-            <Button x:Name="BtnLoginAll" Content="Login All + Run Fitur" Click="OnLoginAll" />
-            <Button x:Name="BtnRunFeat" Content="Run Fitur (Selected)" Click="OnRunFeatureSelected" />
+    <!-- ============ MAIN ============ -->
+    <Grid Grid.Column="1" RowDefinitions="64,*,190" Margin="0">
+      <!-- top bar -->
+      <Border Grid.Row="0" Background="{StaticResource BgPanel}" BorderBrush="#1A2333" BorderThickness="0,0,0,1"
+              Padding="24,0">
+        <DockPanel VerticalAlignment="Center">
+          <Button x:Name="BtnRun" DockPanel.Dock="Right" Click="OnRunBot" Background="{StaticResource Cyan}"
+                  Foreground="#00363A" FontWeight="Bold" Padding="20,8" FontSize="14" HorizontalContentAlignment="Center">
+            ▶ Jalankan Bot
+          </Button>
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock x:Name="TxtPageTitle" Text="Fitur Bot" FontSize="18" FontWeight="Bold" Foreground="{StaticResource TextMain}" />
+            <TextBlock x:Name="TxtPageSub" Text="Urutan eksekusi per akun" FontSize="11" Foreground="{StaticResource TextDim}" />
           </StackPanel>
-          <DataGrid x:Name="GridAccounts" Grid.Row="1"
-                    AutoGenerateColumns="False" CanUserSortColumns="False"
-                    SelectionMode="Extended" HeadersVisibility="Column">
-            <DataGrid.Columns>
-              <DataGridTextColumn Header="UID" Binding="{Binding Uid}" Width="130" IsReadOnly="True" />
-              <DataGridTextColumn Header="Password" Binding="{Binding MaskedPassword}" Width="80" IsReadOnly="True" />
-              <DataGridTextColumn Header="Cookie" Binding="{Binding CookieInfo}" Width="55" IsReadOnly="True" />
-              <DataGridTextColumn Header="Email" Binding="{Binding EmailInfo}" Width="50" IsReadOnly="True" />
-              <DataGridTextColumn Header="2FA" Binding="{Binding TfaInfo}" Width="45" IsReadOnly="True" />
-              <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="110" IsReadOnly="True" />
-              <DataGridTextColumn Header="LastLogin" Binding="{Binding LastLogin}" Width="*" IsReadOnly="True" />
-            </DataGrid.Columns>
-          </DataGrid>
-          <TextBlock Grid.Row="2" Text="Import akun (bulk, 1 akun per baris): uid|pass | uid|pass|cookies | uid|pass|cookies|secret2fa | uid|pass|email|cookies ..." Foreground="Gray" Margin="0,6,0,4" />
-          <TextBox x:Name="TxtBulk" Grid.Row="3" AcceptsReturn="True" TextWrapping="NoWrap"
-                   Watermark="6159xxxx|password123|c_user=1; xs=2" FontFamily="monospace" FontSize="12" />
-          <Button x:Name="BtnBulkImport" Grid.Row="4" Content="Import Bulk" Click="OnBulkImport"
-                  HorizontalAlignment="Left" Margin="0,6,0,0" />
-        </Grid>
-      </TabItem>
+        </DockPanel>
+      </Border>
 
-      <!-- ============ TAB 3: UID ============ -->
-      <TabItem Header="UID">
-        <Grid Margin="6" RowDefinitions="Auto,Auto,*,Auto">
-          <TextBlock Grid.Row="0" Text="Daftar UID target (1 per baris) — dipakai fitur yang butuh UID (mis. Buka Profil)." Foreground="Gray" Margin="0,0,0,6" />
-          <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="6" Margin="0,0,0,6">
-            <Button Content="Simpan" Click="OnSaveUids" />
-            <TextBlock x:Name="TxtUidCount" VerticalAlignment="Center" Foreground="Gray" />
+      <!-- page host -->
+      <ContentControl x:Name="PageHost" Grid.Row="1" Margin="24,16,24,8" />
+
+      <!-- log console -->
+      <Border Grid.Row="2" Margin="24,4,24,16" Background="{StaticResource BgPanel}"
+              BorderBrush="#1A2333" BorderThickness="1" CornerRadius="4" Padding="10,6">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="2,2,0,6">
+            <Ellipse Width="7" Height="7" Fill="{StaticResource Green}" />
+            <TextBlock Text="LOG" FontSize="10" FontWeight="Bold" Foreground="{StaticResource TextDim}" />
+            <TextBlock x:Name="TxtInfo" FontSize="10" Foreground="{StaticResource TextDim}" Margin="12,0,0,0" />
           </StackPanel>
-          <TextBox x:Name="TxtUids" Grid.Row="2" AcceptsReturn="True"
-                   Watermark="61591234567890" FontFamily="monospace" FontSize="12" />
-          <Button x:Name="BtnUidsLoadDb" Grid.Row="3" Content="Isi dari Data Akun" Click="OnUidsFromAccounts"
-                  HorizontalAlignment="Left" Margin="0,6,0,0" />
-        </Grid>
-      </TabItem>
-
-      <!-- ============ TAB 4: LINK ============ -->
-      <TabItem Header="Link">
-        <Grid Margin="6" RowDefinitions="Auto,Auto,*,Auto">
-          <TextBlock Grid.Row="0" Text="Daftar link target (1 per baris) — dipakai fitur yang butuh URL." Foreground="Gray" Margin="0,0,0,6" />
-          <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="6" Margin="0,0,0,6">
-            <Button Content="Simpan" Click="OnSaveLinks" />
-            <TextBlock x:Name="TxtLinkCount" VerticalAlignment="Center" Foreground="Gray" />
-          </StackPanel>
-          <TextBox x:Name="TxtLinks" Grid.Row="2" AcceptsReturn="True"
-                   Watermark="https://m.facebook.com/..." FontFamily="monospace" FontSize="12" />
-          <Button x:Name="BtnLinksOpen" Grid.Row="3" Content="Buka Link Terpilih (test)" Click="OnOpenSelectedLink"
-                  HorizontalAlignment="Left" Margin="0,6,0,0" />
-        </Grid>
-      </TabItem>
-    </TabControl>
-
-    <!-- log -->
-    <TextBox x:Name="TxtLog" Grid.Row="1" IsReadOnly="True" TextWrapping="Wrap"
-             Watermark="log..." Margin="0,8,0,0" FontFamily="monospace" FontSize="12" />
-
-    <DockPanel Grid.Row="2">
-      <StackPanel Orientation="Horizontal" Spacing="6" DockPanel.Dock="Top">
-        <TextBlock Text="Chrome:" VerticalAlignment="Center" />
-        <TextBox x:Name="TxtChrome" Width="480" Watermark="(auto-detect)" />
-        <Button Content="Simpan" Click="OnSaveChrome" />
-        <TextBlock x:Name="TxtChromeInfo" VerticalAlignment="Center" Foreground="Gray" />
-      </StackPanel>
-    </DockPanel>
-
-    <TextBlock x:Name="TxtInfo" Grid.Row="3" Margin="0,6,0,0" Foreground="Gray" />
+          <TextBox x:Name="TxtLog" IsReadOnly="True" TextWrapping="Wrap" Background="Transparent"
+                   BorderThickness="0" FontFamily="Consolas,monospace" FontSize="11.5"
+                   Foreground="{StaticResource TextMain}" />
+        </DockPanel>
+      </Border>
+    </Grid>
   </Grid>
 </Window>

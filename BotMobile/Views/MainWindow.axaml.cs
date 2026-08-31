@@ -1,5 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Media;
+using Avalonia;
 using Avalonia.Threading;
 using BotMobile.Features;
 using BotMobile.Models;
@@ -18,37 +20,63 @@ public partial class MainWindow : Window
     static string DataDir => Path.Combine(AppContext.BaseDirectory, "data");
     static string ConfigPath => Path.Combine(DataDir, "config.txt");
 
-    readonly AccountDb _db;
-    readonly BotEngine _engine = new();
-    readonly ObservableCollection<Account> _accounts = new();
-    readonly ObservableCollection<FeatureRow> _featureRows = new();
-    bool _busy;
+    // shared services (dipakai pages)
+    public AccountDb Db { get; }
+    public PoolDb Pool { get; }
+    public BotEngine Engine { get; } = new();
+    public ObservableCollection<Account> Accounts { get; } = new();
+    public ObservableCollection<FeatureRow> FeatureRows { get; } = new();
 
-    /// <summary>Row VM untuk list fitur.</summary>
+    private readonly Dictionary<string, Control> _pages = new();
+    private bool _busy;
+
+    public MainWindow()
+    {
+        InitializeComponent();
+        Directory.CreateDirectory(DataDir);
+        Db = new AccountDb(Path.Combine(DataDir, "accounts.db"));
+        Pool = new PoolDb(Path.Combine(DataDir, "accounts.db"));
+        foreach (var a in Db.GetAll()) Accounts.Add(a);
+
+        LoadFeatures();
+        Engine.Log += line => Dispatcher.UIThread.Post(() => AppendLog(line));
+
+        TxtChrome.Text = LoadChromePath();
+        ResolveChromeInfo();
+
+        _pages["fitur"] = new Views.Pages.FiturBotPage(this);
+        _pages["akun"] = new Views.Pages.DataAkunPage(this);
+        _pages["uid"] = new Views.Pages.UidPage(this);
+        _pages["link"] = new Views.Pages.LinksPage(this);
+        Navigate("fitur");
+
+        UpdateInfo();
+        Closed += (_, _) => Engine.Shutdown();
+    }
+
+    // ============ fitur ============
+
     public class FeatureRow
     {
         public IBotFeature Feature { get; init; }
         public FeatureConfig Config { get; init; }
         public bool Enabled { get => Config.Enabled; set => Config.Enabled = value; }
-        public string DisplayName => $"{Config.Order + 1}. {Feature.Name}";
-        public string ParamSummary => string.Join(", ",
+        public string DisplayName => Feature.Name;
+        public string Description => Feature.Description;
+        public string OrderNo => (Config.Order + 1).ToString("00");
+        public string Mode => Config.Params.TryGetValue("Metode", out var m) && m.Length > 0
+            ? m : Feature.DefaultMode;
+        public string ModeBadge => Mode.ToUpperInvariant();
+        public string ParamSummary => string.Join("  ·  ",
             Feature.ParamDefs.Select(p => $"{p.Key}={cfgGet(Config, p.Key, p.Def)}"));
 
         static string cfgGet(FeatureConfig c, string k, string d) =>
             c.Params.TryGetValue(k, out var v) && v.Length > 0 ? v : d;
     }
 
-    public MainWindow()
+    private void LoadFeatures()
     {
-        InitializeComponent();
-        Directory.CreateDirectory(DataDir);
-        _db = new AccountDb(Path.Combine(DataDir, "accounts.db"));
-        GridAccounts.ItemsSource = _accounts;
-        foreach (var a in _db.GetAll()) _accounts.Add(a);
-
-        // fitur: load state, merge registry (fitur baru otomatis masuk; disabled default utk fitur mutasi)
         var saved = FeatureStateStore.Load();
-        var savedIds = saved.Select(s => s.FeatureId).ToHashSet();
         int order = 0;
         foreach (var f in FeatureRegistry.All)
         {
@@ -56,162 +84,76 @@ public partial class MainWindow : Window
             if (cfg == null)
             {
                 cfg = new FeatureConfig { FeatureId = f.Id, Enabled = f.DefaultEnabled };
-                // fitur baru (tidak ada di state lama): sisipkan sebelum fitur legacy post_status
                 cfg.Order = f.Id == "post_status" ? int.MaxValue - 1 : order;
             }
             else cfg.Order = order;
             cfg.Params ??= new();
-            _featureRows.Add(new FeatureRow { Feature = f, Config = cfg });
+            if (!cfg.Params.ContainsKey("Metode") && f.Modes.Length > 1)
+                cfg.Params["Metode"] = f.DefaultMode;
+            FeatureRows.Add(new FeatureRow { Feature = f, Config = cfg });
             order++;
         }
-        // normalisasi order
-        for (int k = 0; k < _featureRows.Count; k++) _featureRows[k].Config.Order = k;
-        LstFeatures.ItemsSource = _featureRows;
-
-        _engine.Log += line => Dispatcher.UIThread.Post(() => AppendLog(line));
-        TxtChrome.Text = LoadChromePath();
-        ResolveChromeInfo();
-        UpdateInfo();
-        LoadUidsLinks();
-        Closed += (_, _) => _engine.Shutdown();
+        for (int k = 0; k < FeatureRows.Count; k++) FeatureRows[k].Config.Order = k;
     }
 
-    // ============ FITUR BOT tab ============
-
-    FeatureRow? SelectedFeature() => LstFeatures.SelectedItem as FeatureRow;
-
-    void OnFeatureToggle(object? sender, RoutedEventArgs e) => SaveFeatures();
-
-    void OnFeatureUp(object? sender, RoutedEventArgs e) => MoveFeature(-1);
-    void OnFeatureDown(object? sender, RoutedEventArgs e) => MoveFeature(1);
-
-    void MoveFeature(int delta)
+    public void SaveFeatures()
     {
-        var row = SelectedFeature();
-        if (row == null) { AppendLog("pilih fitur dulu"); return; }
-        int i = _featureRows.IndexOf(row);
-        int j = i + delta;
-        if (j < 0 || j >= _featureRows.Count) return;
-        _featureRows.Move(i, j);
-        for (int k = 0; k < _featureRows.Count; k++) _featureRows[k].Config.Order = k;
-        RefreshFeatureRows();
-        SaveFeatures();
+        FeatureStateStore.Save(FeatureRows.Select(r => r.Config));
+        AppendLog("urutan/metode/fitur disimpan");
     }
 
-    void RefreshFeatureRows()
+    public void RefreshFeatureList()
     {
-        // paksa re-render row (nomor urut berubah) dengan reload list
-        var sel = LstFeatures.SelectedIndex;
-        LstFeatures.ItemsSource = null;
-        LstFeatures.ItemsSource = _featureRows;
-        LstFeatures.SelectedIndex = sel;
+        foreach (var row in FeatureRows) row.Config.Order = FeatureRows.IndexOf(row);
     }
 
-    void SaveFeatures()
+    // ============ navigasi ============
+
+    private void Navigate(string key)
     {
-        FeatureStateStore.Save(_featureRows.Select(r => r.Config));
-        AppendLog("urutan/status fitur disimpan");
-    }
-
-    async void OnFeatureConfig(object? sender, RoutedEventArgs e)
-    {
-        var row = SelectedFeature();
-        if (row == null) { AppendLog("pilih fitur dulu"); return; }
-        var win = new FeatureConfigWindow(row.Feature, row.Config);
-        await win.ShowDialog(this);
-        if (!win.Confirmed) return;
-        SaveFeatures();
-        RefreshFeatureRows();
-    }
-
-    // ============ DATA AKUN tab ============
-
-    void UpdateInfo() =>
-        TxtInfo.Text = $"{_accounts.Count} akun | {BotData.Context.Uids.Count} UID | {BotData.Context.Links.Count} link | DB: {Path.Combine(DataDir, "accounts.db")}";
-
-    void OnAdd(object? sender, RoutedEventArgs e) => EditAccount(new Account());
-
-    void OnEdit(object? sender, RoutedEventArgs e)
-    {
-        var acc = GridAccounts.SelectedItem as Account;
-        if (acc == null) { AppendLog("pilih akun dulu"); return; }
-        EditAccount(acc);
-    }
-
-    async void EditAccount(Account acc)
-    {
-        var isNew = _accounts.All(x => x.Uid != acc.Uid) && !_db.GetAll().Any(x => x.Uid == acc.Uid);
-        var win = new EditAccountWindow(acc);
-        await win.ShowDialog(this);
-        if (!win.Confirmed) return;
-        if (isNew && _accounts.Any(x => x.Uid == acc.Uid))
+        if (!_pages.TryGetValue(key, out var page)) return;
+        PageHost.Content = page;
+        (TxtPageTitle.Text, TxtPageSub.Text) = key switch
         {
-            AppendLog($"uid {acc.Uid} sudah ada di tabel");
-            return;
-        }
-        _db.Upsert(acc);
-        if (isNew) _accounts.Add(acc);
-        UpdateInfo();
-    }
-
-    void OnDelete(object? sender, RoutedEventArgs e)
-    {
-        var sel = GridAccounts.SelectedItems?.Cast<Account>().ToList() ?? new();
-        if (sel.Count == 0) { AppendLog("pilih akun dulu"); return; }
-        foreach (var a in sel)
+            "fitur" => ("Fitur Bot", "Urutan & metode eksekusi per akun"),
+            "akun" => ("Data Akun", "Import bulk & status akun"),
+            "uid" => ("UID Target", "UID yang ditambah teman (dipakai fitur Add Friend)"),
+            "link" => ("Link", "URL target (dipakai fitur Post Status)"),
+            _ => ("", ""),
+        };
+        foreach (var b in new[] { NavFitur, NavAkun, NavUid, NavLink })
         {
-            _db.Delete(a.Uid);
-            _accounts.Remove(a);
-            AppendLog($"hapus {a.Uid}");
+            var active = (string)b!.Tag! == key;
+            b.Background = active ? new SolidColorBrush(Color.Parse("#162238")) : Brushes.Transparent;
+            b.BorderThickness = new Thickness(3, 0, 0, 0);
+            b.BorderBrush = active ? (IBrush)Resources["Cyan"]! : Brushes.Transparent;
+            b.Foreground = active ? (IBrush)Resources["Cyan"]! : (IBrush)Resources["TextDim"]!;
         }
-        UpdateInfo();
     }
 
-    async void OnBulkImport(object? sender, RoutedEventArgs e)
+    private void OnNav(object? sender, RoutedEventArgs e)
     {
-        var text = TxtBulk.Text ?? "";
-        if (text.Trim().Length == 0) { AppendLog("bulk kosong"); return; }
-        var lines = text.Split('\n');
-        var n = _db.ImportLines(lines);
-        _accounts.Clear();
-        foreach (var a in _db.GetAll()) _accounts.Add(a);
-        TxtBulk.Text = "";
-        AppendLog($"import bulk {n}/{lines.Length} baris OK (duplikat di-update)");
-        UpdateInfo();
+        if (sender is Button b && b.Tag is string key) Navigate(key);
     }
 
-    // ============ login / run ============
+    // ============ run bot ============
 
-    async void OnLoginSelected(object? sender, RoutedEventArgs e) =>
-        await RunBotAsync(GridAccounts.SelectedItems?.Cast<Account>().ToList() ?? new());
-
-    async void OnLoginAll(object? sender, RoutedEventArgs e) => await RunBotAsync(_accounts.ToList());
-
-    async void OnRunFeatureSelected(object? sender, RoutedEventArgs e)
-    {
-        var sel = GridAccounts.SelectedItems?.Cast<Account>().ToList() ?? new();
-        if (sel.Count == 0) { AppendLog("pilih akun dulu"); return; }
-        // run fitur = sama dengan login (login dulu, lalu fitur enabled)
-        await RunBotAsync(sel);
-    }
-
-    async Task RunBotAsync(List<Account> targets)
+    public async Task RunBotAsync(System.Collections.Generic.List<Account> targets)
     {
         if (_busy) { AppendLog("masih jalan, tunggu"); return; }
-        if (targets.Count == 0) { AppendLog("tidak ada akun"); return; }
+        if (targets.Count == 0) { AppendLog("tidak ada akun target"); return; }
 
         string chrome;
         try { chrome = BotService.FindChrome(TxtChrome.Text); }
         catch (Exception ex) { AppendLog(ex.Message); return; }
 
-        var order = _featureRows.Select(r => r.Config).ToList();
-        var enabled = order.Where(f => f.Enabled).ToList();
+        var order = FeatureRows.Select(r => r.Config).ToList();
         _busy = true;
-        SetButtons(false);
-        AppendLog($"=== run {targets.Count} akun, {enabled.Count} fitur aktif: {string.Join(" → ", enabled.Select(f => f.FeatureId))} ===");
+        BtnRun.IsEnabled = false;
+        AppendLog($"=== run {targets.Count} akun, fitur aktif: {string.Join(" → ", order.Where(f => f.Enabled).Select(f => f.FeatureId))} ===");
         try
         {
-            await _engine.RunAsync(targets, order, acc => { _db.Upsert(acc); return Task.CompletedTask; });
+            await Engine.RunAsync(targets, order, acc => { Db.Upsert(acc); return Task.CompletedTask; });
         }
         catch (Exception ex)
         {
@@ -220,92 +162,42 @@ public partial class MainWindow : Window
         finally
         {
             _busy = false;
-            SetButtons(true);
+            BtnRun.IsEnabled = true;
             AppendLog("=== selesai ===");
         }
     }
 
-    void SetButtons(bool enabled)
+    private async void OnRunBot(object? sender, RoutedEventArgs e)
     {
-        foreach (var b in new Control?[] { BtnAdd, BtnEdit, BtnDelete, BtnLoginSel, BtnLoginAll, BtnRunFeat, BtnBulkImport })
-            if (b != null) b.IsEnabled = enabled;
+        if (Views.Pages.DataAkunPage.LastSelection.Count > 0)
+            await RunBotAsync(Views.Pages.DataAkunPage.LastSelection.ToList());
+        else
+            await RunBotAsync(Accounts.ToList());
     }
 
-    // ============ UID & LINK tabs ============
+    public void SetButtonsEnabled(bool enabled) => BtnRun.IsEnabled = enabled && !_busy;
 
-    static string UidsPath => Path.Combine(DataDir, "uids.txt");
-    static string LinksPath => Path.Combine(DataDir, "links.txt");
-
-    void LoadUidsLinks()
-    {
-        TxtUids.Text = File.Exists(UidsPath) ? File.ReadAllText(UidsPath) : "";
-        TxtLinks.Text = File.Exists(LinksPath) ? File.ReadAllText(LinksPath) : "";
-        SyncUidLinkCounts();
-    }
-
-    void SyncUidLinkCounts()
-    {
-        BotData.Context.Uids = LinesOf(TxtUids.Text);
-        BotData.Context.Links = LinesOf(TxtLinks.Text);
-        TxtUidCount.Text = $"{BotData.Context.Uids.Count} UID";
-        TxtLinkCount.Text = $"{BotData.Context.Links.Count} link";
-    }
-
-    static List<string> LinesOf(string text) => text
-        .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-        .Where(l => l.Length > 0).ToList();
-
-    void OnSaveUids(object? sender, RoutedEventArgs e)
-    {
-        File.WriteAllText(UidsPath, TxtUids.Text ?? "");
-        SyncUidLinkCounts();
-        AppendLog($"UID disimpan ({BotData.Context.Uids.Count})");
-        UpdateInfo();
-    }
-
-    void OnSaveLinks(object? sender, RoutedEventArgs e)
-    {
-        File.WriteAllText(LinksPath, TxtLinks.Text ?? "");
-        SyncUidLinkCounts();
-        AppendLog($"link disimpan ({BotData.Context.Links.Count})");
-        UpdateInfo();
-    }
-
-    void OnUidsFromAccounts(object? sender, RoutedEventArgs e)
-    {
-        TxtUids.Text = string.Join("\n", _db.GetAll().Select(a => a.Uid));
-        SyncUidLinkCounts();
-        AppendLog("UID terisi dari data akun (belum disimpan — klik Simpan)");
-    }
-
-    async void OnOpenSelectedLink(object? sender, RoutedEventArgs e)
-    {
-        var link = BotData.Context.Links.FirstOrDefault();
-        if (link == null) { AppendLog("tidak ada link"); return; }
-        try
-        {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(link) { UseShellExecute = true });
-            AppendLog($"buka link: {link}");
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"buka link gagal: {ex.Message}");
-        }
-        await Task.CompletedTask;
-    }
-
-    // ============ chrome path ============
+    // ============ chrome ============
 
     static string? LoadChromePath() =>
         File.Exists(ConfigPath) ? File.ReadAllText(ConfigPath).Trim() : null;
 
-    void ResolveChromeInfo()
+    private void ResolveChromeInfo()
     {
-        try { TxtChromeInfo.Text = $"→ {BotService.FindChrome(TxtChrome.Text)}"; }
-        catch (Exception ex) { TxtChromeInfo.Text = ex.Message; }
+        try
+        {
+            var p = BotService.FindChrome(TxtChrome.Text);
+            TxtChromeChip.Text = $"Chrome: {Path.GetFileName(p)}";
+            TxtChromeChip.Foreground = (IBrush)Resources["Green"]!;
+        }
+        catch (Exception ex)
+        {
+            TxtChromeChip.Text = ex.Message.Split('\n')[0];
+            TxtChromeChip.Foreground = (IBrush)Resources["Red"]!;
+        }
     }
 
-    void OnSaveChrome(object? sender, RoutedEventArgs e)
+    private void OnSaveChrome(object? sender, RoutedEventArgs e)
     {
         File.WriteAllText(ConfigPath, TxtChrome.Text?.Trim() ?? "");
         ResolveChromeInfo();
@@ -314,9 +206,12 @@ public partial class MainWindow : Window
 
     // ============ log ============
 
-    void AppendLog(string line)
+    public void AppendLog(string line)
     {
-        TxtLog.Text += $"[{DateTime.Now:HH:mm:ss}] {line}{Environment.NewLine}";
+        TxtLog.Text += $"{DateTime.Now:HH:mm:ss}  {line}{Environment.NewLine}";
         TxtLog.CaretIndex = TxtLog.Text?.Length ?? 0;
+        TxtInfo.Text = $"{Accounts.Count} akun · {Pool.Stats().TargetsFree} UID bebas · {Pool.Stats().LinksFree} link bebas";
     }
+
+    private void UpdateInfo() => AppendLog("Bot Mobile siap.");
 }

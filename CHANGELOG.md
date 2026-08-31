@@ -2,6 +2,21 @@
 
 Format berdasarkan [Keep a Changelog](https://keepachangelog.com/id/1.1.0/).
 
+## [0.5.0] - 2026-08-31
+
+### Added — GUI redesign (Stitch design system) + metode Selector/GraphQL
+- **GUI baru berdasarkan design system Stitch "RJ TRACK v3"** (dark terminal): deep-space #0A0E17, surface #101827, cyan #00E5FF, 4px corners, sidebar 220px dengan cyan left-edge marker nav, top bar + tombol "Jalankan Bot", feature cards, log console JetBrains Mono. Dikode ulang sebagai 4 page UserControl terpisah (`Views/Pages/`) — Fitur Bot, Data Akun, UID, Link.
+- **Metode per fitur: GraphQL vs Selector** — bisa dipilih dari dropdown di popup konfigurasi fitur (dan badge metode di card). Arsip:
+  - `Features/FeatureModes.cs` — konstanta metode.
+  - `Features/Selector/UiSelector.cs` — klik elemen UI by label multi-bahasa (reliable click chain pointerdown→…→click, port add_friend button-mode Bot_Ngekeng).
+  - Jalur Selector implementasi nyata: **Add Friend** (buka profil m.facebook/uid → klik "Tambahkan Teman" → verifikasi "Batalkan"), **Confirm Friend** (/friends/requests → klik "Konfirmasi"), **Add Suggestions** (/friends/suggestions → scroll + klik Add).
+  - Fitur browser (Buka Beranda, Scroll Feed, Buka Profil) ditandai metode SELECTOR; fitur pure-GraphQL tetap GRAPHQL.
+- Pool UID/Link terhubung dari tab UID & Link (tombol "Import ke Pool" + stats di status bar).
+
+### Changed
+- Feature cards menampilkan nomor urut mono, badge metode berwarna (cyan=GRAPHQL, amber=SELECTOR), toggle switch, gear config, tombol ▲▼.
+- `IBotFeature.Modes` (default interface member) — fitur baru otomatis satu metode; override untuk dukung dua.
+
 ## [0.4.0] - 2026-08-31
 
 ### Added — Port fitur dari Bot_Ngekeng (subagent research 3 area: konten, sosial, infra)

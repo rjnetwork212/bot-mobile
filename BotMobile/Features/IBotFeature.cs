@@ -31,6 +31,12 @@ public interface IBotFeature
     (string Key, string Label, string Def)[] ParamDefs { get; }  // field popup config
     bool DefaultEnabled { get; }    // default aktif? fitur mutasi = false (aman)
 
+    /// <summary>Metode tersedia (default: graphql saja). Override untuk fitur yang punya jalur selector.</summary>
+    string[] Modes => new[] { FeatureModes.GraphQl };
+
+    string DefaultMode => Modes[0];
+
+    /// <summary>Jalankan fitur dengan metode yang dipilih (cfg.Params["Metode"]).</summary>
     Task RunAsync(IPage page, Account acc, FeatureConfig cfg, Action<string> log, RunFlags flags);
 }
 
