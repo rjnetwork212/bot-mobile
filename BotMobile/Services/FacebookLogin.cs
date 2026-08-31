@@ -1,4 +1,5 @@
 using BotMobile.Models;
+using BotMobile.Features.Selector;
 using PuppeteerSharp;
 using PuppeteerSharp.Input;
 using System;
@@ -95,35 +96,105 @@ public static class FacebookLogin
     {
         if (string.IsNullOrWhiteSpace(acc.Password)) return (false, "nopassword");
         // cookie mati yang masih nempel bikin /login/ render varian "saved login" tanpa form
-        // → bersihkan cookies dulu supaya form email/pass standar muncul (hasil probe akun c_user)
         try { await page.Client.SendAsync("Network.clearBrowserCookies"); } catch { }
         try
         {
             await page.GoToAsync("https://m.facebook.com/", WaitUntilNavigation.DOMContentLoaded);
         }
-        catch (NavigationException)
+        catch (NavigationException) { }
+        await Task.Delay(2500);
+
+        // state machine relogin (port relogin.py) — max 2 attempt
+        for (int attempt = 1; attempt <= 2; attempt++)
         {
-            // FB kadang abort navigation saat redirect login — form tetap dicek
+            var state = await FacebookRelogin.DetectAsync(page);
+            log($"state: {state} (attempt {attempt})");
+            switch (state)
+            {
+                case "logged_in":
+                    return (await IsLoggedInAsync(page) && !IsLoginPageUrl(page.Url), "ok");
+
+                case "saved_profile_resume":
+                    var saved = await FacebookRelogin.HandleSavedProfileAsync(page, acc, log);
+                    if (saved) return (true, "ok_saved_profile");
+                    break; // retry → detect ulang
+
+                case "needs_2fa":
+                    var (twoFa, twoFaOutcome) = await FacebookRelogin.Handle2FaAsync(page, acc, log);
+                    if (twoFa) return (true, "ok_2fa");
+                    return (false, twoFaOutcome == "no_totp_secret" ? "checkpoint" : "checkpoint");
+
+                case "consent":
+                    await FacebookRelogin.DismissConsentAsync(page, log);
+                    break;
+
+                case "captcha":
+                    return (false, "captcha");
+
+                case "checkpoint_disabled":
+                    return (false, "blocked");
+
+                case "checkpoint":
+                    return (false, "checkpoint");
+
+                case "login_failed_identify":
+                    return (false, "checkpoint");
+
+                case "suspicious":
+                    if (!await UiSelector.ClickButtonByLabelsAsync(page, FbLang.IdentityButtons))
+                        return (false, "checkpoint");
+                    await Task.Delay(4000);
+                    break;
+
+                case "login_form":
+                {
+                    await page.TypeAsync(LoginSelectors.Email, acc.Uid, new TypeOptions { Delay = 50 });
+                    await page.TypeAsync(LoginSelectors.Pass, acc.Password, new TypeOptions { Delay = 50 });
+                    await Task.Delay(400);
+                    await page.ClickAsync(LoginSelectors.Submit);
+                    log("submit login");
+                    var (ok, outcome) = await WaitLoginResultAsync(page);
+                    if (ok) return (true, "ok");
+                    if (outcome == "blocked") return (false, "blocked");
+                    if (outcome == "wrongpass") return (false, "wrongpass");
+                    if (outcome == "checkpoint") return (false, "checkpoint");
+                    break; // unknown → detect ulang
+                }
+
+                default:
+                {
+                    // form tidak ada & tidak dikenal: mungkin session masih valid
+                    if (await IsLoggedInAsync(page)) return (true, "ok");
+                    // coba buka form eksplisit
+                    try
+                    {
+                        await page.GoToAsync("https://m.facebook.com/login/", WaitUntilNavigation.DOMContentLoaded);
+                    }
+                    catch (NavigationException) { }
+                    await Task.Delay(2000);
+                    if (!await HasSelector(page, LoginSelectors.Email))
+                    {
+                        var st2 = await FacebookRelogin.DetectAsync(page);
+                        if (st2 == "saved_profile_resume")
+                        {
+                            var saved2 = await FacebookRelogin.HandleSavedProfileAsync(page, acc, log);
+                            if (saved2) return (true, "ok_saved_profile");
+                        }
+                        return (false, "form_not_found");
+                    }
+                    break;
+                }
+            }
         }
-        try
-        {
-            await page.WaitForSelectorAsync(LoginSelectors.Email, new WaitForSelectorOptions { Timeout = 20000 });
-        }
-        catch (WaitTaskTimeoutException)
-        {
-            // form tidak muncul: sudah login (redirect home) atau checkpoint
-            var url = page.Url ?? "";
-            if (url.Contains("checkpoint") || url.Contains("two_step")) return (false, "checkpoint");
-            if (!url.Contains("/login") && await IsLoggedInAsync(page)) return (true, "ok");
-            return (false, "form_not_found");
-        }
-        await Task.Delay(800);
-        await page.TypeAsync(LoginSelectors.Email, acc.Uid, new TypeOptions { Delay = 50 });
-        await page.TypeAsync(LoginSelectors.Pass, acc.Password, new TypeOptions { Delay = 50 });
-        await Task.Delay(400);
-        await page.ClickAsync(LoginSelectors.Submit);
-        log("submit login");
-        return await WaitLoginResultAsync(page);
+        var finalState = await FacebookRelogin.DetectAsync(page);
+        return (false, finalState.Contains("checkpoint") || finalState == "needs_2fa" ? "checkpoint"
+            : finalState == "captcha" ? "captcha" : "unknown");
+    }
+
+    static async Task<bool> HasSelector(IPage page, string selector)
+    {
+        try { return await page.QuerySelectorAsync(selector) != null; }
+        catch { return false; }
     }
 
     /// <summary>
@@ -189,12 +260,6 @@ public static class FacebookLogin
         return string.Join("; ", cookies
             .Where(c => c.Domain != null && c.Domain.Contains("facebook"))
             .Select(c => $"{c.Name}={c.Value}"));
-    }
-
-    static async Task<bool> HasSelector(IPage page, string selector)
-    {
-        try { return await page.QuerySelectorAsync(selector) != null; }
-        catch { return false; }
     }
 }
 

@@ -23,7 +23,7 @@ internal static class Program
             SelfTest.Run();
             return;
         }
-        if (args.Length > 0 && (args[0] == "--import" || args[0] == "--login" || args[0] == "--probe" || args[0] == "--probe-login" || args[0] == "--probe-graphql" || args[0] == "--probe-cookie" || args[0] == "--probe-token" || args[0] == "--probe-traffic" || args[0] == "--run"))
+        if (args.Length > 0 && (args[0] == "--import" || args[0] == "--login" || args[0] == "--probe" || args[0] == "--probe-login" || args[0] == "--probe-graphql" || args[0] == "--probe-cookie" || args[0] == "--probe-token" || args[0] == "--probe-traffic" || args[0] == "--probe-messaging" || args[0] == "--run"))
         {
             Cli.Run(args).GetAwaiter().GetResult();
             return;
@@ -109,6 +109,12 @@ public static class Cli
             case "--probe-graphql":
             {
                 await GraphQLProbe.Run(args.Length > 1 ? args[1] : "");
+                bot.Shutdown();
+                return;
+            }
+            case "--probe-messaging":
+            {
+                await MessagingProbe.Run(args.Length > 1 ? args[1] : "");
                 bot.Shutdown();
                 return;
             }

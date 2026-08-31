@@ -33,7 +33,12 @@ public class CreateGroupFeature : IBotFeature
             if (flags.SessionExpired) break;
             var name = $"{prefix} {DateTime.Now:ddMM} {i}{rnd.Next(10, 99)}";
             var (_, outcome, threadId) = await FbHelper.CreateGroupAsync(page, name);
-            if (outcome == "created") { ok++; log($"'{name}' OK (thread {threadId})"); }
+            if (outcome == "created")
+            {
+                ok++;
+                log($"'{name}' OK (thread {threadId})");
+                if (!string.IsNullOrEmpty(threadId)) BotData.Context.GroupThreads.Add(threadId);
+            }
             else if (outcome == "session_expired" || outcome == "no_tokens") { flags.SessionExpired = true; log($"session mati saat '{name}'"); break; }
             else log($"'{name}': {outcome}");
             await Task.Delay(rnd.Next(cfg.GetInt("DelayMinMs", 3000), cfg.GetInt("DelayMaxMs", 8000)));

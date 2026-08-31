@@ -2,6 +2,25 @@
 
 Format berdasarkan [Keep a Changelog](https://keepachangelog.com/id/1.1.0/).
 
+## [0.6.0] - 2026-09-01
+
+### Added — port lengkap hasil bedah Bot_Ngekeng (5 sesi riset, docs/BOT_NGEKENG_REFERENCE.md)
+- **FbLang.cs**: label set multi-bahasa FB (port fb_lang.py) — detect_state_text, CONTINUE, LOGIN, ADD_FRIEND, CONFIRM, MODAL_GATE, ADS_FREE_RADIO + PAID_SKIP, COOKIE allow/decline, NEEDS_2FA, SUSPICIOUS, DISABLED, CAPTCHA, reels/composer sets.
+- **Relogin state machine** (`FacebookRelogin.cs`, port relogin.py subset): detect state (login_form / saved_profile_resume / needs_2fa / consent / captcha / checkpoint / suspicious) + handler masing-masing — saved-profile klik Continue → modal password; **2FA TOTP otomatis** dari kolom secret 2FA (HMAC-SHA1 base32, port pyotp); consent radio "gratis dengan iklan" skip paid markers.
+- **CaptionBuilder.cs**: port caption_builder.py penuh — **16 bahasa, 268 hook, 153 CTA** (Resources/caption_templates.json), pola emoji-hook-CTA-link + hashtag pool; **TOTP generator** include.
+- **5 fitur baru**: Add Member Group (pool UID → group runtime/fetch), Kirim Pesan Group (Mercury + Lightspeed fallback), Ganti Bahasa (doc 29960775910235124), Tag Teman (createTagPost: link preview 31695001416753529 + with_tags_ids + caption builder, link pool khusus), Setting Profil (bookmarklet 138KB verbatim Bot_Ngekeng, embedded).
+- **docs/BOT_NGEKENG_REFERENCE.md**: referensi lengkap doc_id, state machine, selector, flow reels, pools — sumber kebenaran port berikutnya.
+- Total fitur: **19** (dari 4 di v0.5.0).
+
+### Fixed
+- **GUI macet**: loop tak henti toggle→Rebuild→toggle (guard `_syncing` + set state setelah handler terpasang).
+- Halaman Fitur Bot blank (instance StackPanel ter-reassign).
+- Kontrol card menumpuk teks (Grid.SetColumn dead-code setelah return).
+
+### Known issues
+- Kirim pesan group: Mercury `/messaging/send/` balik HTML redirect dari web.facebook.com; Lightspeed sampai server tapi `noncoercible_variable_value` — butuh recon endpoint (CLI `--probe-messaging` tersedia: kirim 1 pesan manual, endpoint+payload terekam).
+- QA visual GUI: `dotnet run -- --screenshot` (headless render, Wayland blok screen capture).
+
 ## [0.5.0] - 2026-08-31
 
 ### Added — GUI redesign (Stitch design system) + metode Selector/GraphQL

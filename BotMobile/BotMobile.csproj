@@ -22,6 +22,8 @@
   <ItemGroup>
     <EmbeddedResource Include="Resources/stealth.js" />
     <EmbeddedResource Include="Resources/fbhelper.js" />
+    <EmbeddedResource Include="Resources/setting_profile_js.txt" />
+    <EmbeddedResource Include="Resources/caption_templates.json" />
   </ItemGroup>
 
 </Project>

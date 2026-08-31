@@ -70,7 +70,7 @@
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 20000);
     try {
-      const r = await fetch(BASE() + '/api/graphql/', {
+      const r = await fetch('/api/graphql/', {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -458,4 +458,261 @@
 
   M._installed = true;
   window.__mfb = M;
+
+  // ── changeLocale (port fb_client.py changeLocale, payload asli) ──
+  M.changeLocale = async (localeCode, referrer) => {
+    const res = await send(await M.graphql('29960775910235124', 'useCometLocaleSelectorLanguageChangeMutation',
+      { locale: localeCode, referrer: referrer || 'WWW_COMET_NAVBAR', fallback_locale: null }));
+    if (!res.ok) return JSON.stringify(res);
+    const blob = res.raw || '';
+    if (blob.indexOf('"errors"') === -1)
+      return JSON.stringify({ ok: true, outcome: 'locale_changed', locale: localeCode });
+    return JSON.stringify({ ok: false, outcome: 'graphql_errors', preview: blob.slice(0, 150) });
+  };
+
+  // ── fetchGroups (port: legacy q multipart + threadlist doc fallback) ──
+  M.fetchGroups = async () => {
+    const t = M.getTokens();
+    if (!t.userId) return JSON.stringify({ __error: 'no_tokens' });
+    const extract = (data) => {
+      const groups = [];
+      const stack = [data];
+      while (stack.length) {
+        const cur = stack.pop();
+        if (!cur || typeof cur !== 'object') continue;
+        if (cur.thread_key && cur.thread_key.thread_fbid &&
+            cur.thread_type === 'GROUP' && !groups.includes(String(cur.thread_key.thread_fbid)))
+          groups.push(String(cur.thread_key.thread_fbid));
+        for (const k of Object.keys(cur)) stack.push(cur[k]);
+      }
+      return groups;
+    };
+    // jalur 1: threadlist doc_id (graphqlbatch)
+    try {
+      const queries = { o0: { doc_id: '1349387578499440', query_params: {
+        limit: 100, before: null, tags: ['INBOX'], includeDeliveryReceipts: true, includeSeqID: false } } };
+      const p = new URLSearchParams({
+        av: t.userId, __user: t.userId, __a: '1',
+        fb_dtsg: t.fb_dtsg || '', jazoest: t.jazoest || '', lsd: t.lsd || '',
+        batch_name: 'MessengerGraphQLThreadlistFetcher', queries: JSON.stringify(queries),
+        server_timestamps: 'true',
+      });
+      const r = await fetch(BASE() + '/api/graphqlbatch/', {
+        method: 'POST', credentials: 'include',
+        body: p.toString(),
+      });
+      const txt = await r.text();
+      // graphqlbatch: beberapa baris, tiap baris diawali "for (;;);" — parse per baris
+      let data = null;
+      for (const line of txt.split('\n')) {
+        const clean = line.replace(/^for\s*\(;;\);\s*/, '').trim();
+        if (!clean.startsWith('{')) continue;
+        try { data = JSON.parse(clean); } catch (e) { continue; }
+        const groups = extract(data);
+        if (groups.length) return JSON.stringify({ ok: true, groups, source: 'threadlist_doc_id' });
+        if (data && data.o0) data = data.o0;
+      }
+      if (data) {
+        const groups = extract(data);
+        if (groups.length) return JSON.stringify({ ok: true, groups, source: 'threadlist_doc_id_2' });
+      }
+      // batch kosong/Not Found → lanjut jalur legacy
+    } catch (e) {}
+    // jalur 2: legacy q multipart
+    try {
+      const q = 'viewer(){message_threads{nodes{thread_key{thread_fbid,other_user_id},messages_count,thread_type,updated_time_precise}}}';
+      const boundary = '----WebKitFormBoundaryOD9T3A10vvwxQyu4';
+      const body = `--${boundary}\r\nContent-Disposition: form-data; name="q"\r\n\r\n${q}\r\n--${boundary}\r\nContent-Disposition: form-data; name="fb_dtsg"\r\n\r\n${t.fb_dtsg || ''}\r\n--${boundary}--`;
+      const r = await fetch('/api/graphql/', {
+        method: 'POST', credentials: 'include',
+        headers: { 'content-type': `multipart/form-data; boundary=${boundary}`, ...(t.lsd ? { 'x-fb-lsd': t.lsd } : {}) },
+        body,
+      });
+      const txt = (await r.text()).replace(/^for\s*\(;;\);\s*/, '');
+      let data = null; try { data = JSON.parse(txt); } catch (e) {}
+      const groups = data ? extract(data) : [];
+      if (groups.length) return JSON.stringify({ ok: true, groups, source: 'legacy_q' });
+      return JSON.stringify({ __error: 'legacy_empty', body: txt.replace(/\s+/g, ' ').slice(0, 300) });
+    } catch (e) {
+      return JSON.stringify({ __error: 'fetch_failed', message: String(e) });
+    }
+  };
+
+  // ── addGroupMember (port: Mercury /messaging/send/ + graphql fallback) ──
+  M.addGroupMember = async (threadId, uid) => {
+    const t = M.getTokens();
+    const ts = Date.now();
+    const msgId = String(ts) + String(Math.floor(Math.random() * 1000000)).padStart(6, '0');
+    try {
+      const p = new URLSearchParams({
+        client: 'mercury', action_type: 'ma-type:log-message', log_message_type: 'log:subscribe',
+        ephemeral_ttl_mode: '0', has_attachment: 'false', message_id: msgId, offline_threading_id: msgId,
+        thread_fbid: String(threadId), source: 'source:chat:web', timestamp: String(ts),
+        __user: t.userId, fb_dtsg: t.fb_dtsg || '', jazoest: t.jazoest || '',
+        __a: '1', __comet_req: '0', lsd: t.lsd || '',
+      });
+      p.append('log_message_data[added_participants][0]', `fbid:${uid}`);
+      const r = await fetch('/messaging/send/', { method: 'POST', credentials: 'include', body: p.toString() });
+      const txt = await r.text();
+      if (r.status === 200 && txt.indexOf('"error"') === -1 && txt.indexOf('errorSummary') === -1)
+        return JSON.stringify({ ok: true, outcome: 'member_added', method: 'mercury' });
+    } catch (e) {}
+    // fallback graphql
+    for (const docId of ['5300653556637337', '6822238384462615']) {
+      const res = await send(await M.graphql(docId, 'MessengerThreadAddParticipantsMutation', {
+        input: {
+          client_mutation_id: String(Math.floor(Math.random() * 1000)),
+          actor_id: t.userId, thread_id: String(threadId),
+          participant_ids: [String(uid)], source: 'MESSENGER_GROUP_THREAD_DETAILS',
+        },
+      }));
+      const blob = res.raw || '';
+      if (blob.indexOf('messenger_thread_add_participants') >= 0 ||
+          (blob.indexOf('"data"') >= 0 && blob.indexOf('"errors"') === -1))
+        return JSON.stringify({ ok: true, outcome: 'member_added', method: 'graphql' });
+    }
+    return JSON.stringify({ ok: false, outcome: 'add_failed' });
+  };
+
+  // ── sendGroupMessage (port: Mercury; link dikirim sebagai body — preview server-side) ──
+  M.sendGroupMessage = async (threadId, text) => {
+    const t = M.getTokens();
+    const ts = Date.now();
+    const otid = String(ts) + String(Math.floor(Math.random() * 1000000)).padStart(6, '0');
+    const threadingId = `<${ts}:${Math.floor(Math.random() * 4294967295)}-${t.userId}@mail.projektitan.com>`;
+    try {
+      const p = new URLSearchParams({
+        client: 'mercury', action_type: 'ma-type:user-generated-message', author: `fbid:${t.userId}`,
+        timestamp: String(ts), source: 'source:chat:web', body: text,
+        offline_threading_id: otid, message_id: otid, threading_id: threadingId,
+        ephemeral_ttl_mode: '0', status: '0', has_attachment: 'false', thread_fbid: String(threadId),
+        __user: t.userId, av: t.userId, fb_dtsg: t.fb_dtsg || '',
+        jazoest: t.jazoest || '', __a: '1', lsd: t.lsd || '',
+      });
+      const r = await fetch('/messaging/send/', { method: 'POST', credentials: 'include', body: p.toString() });
+      const txt = await r.text();
+      if (r.status === 200 && txt.indexOf('"error"') === -1 && txt.indexOf('errorSummary') === -1)
+        return JSON.stringify({ ok: true, outcome: 'message_sent' });
+      return JSON.stringify({ ok: false, outcome: 'send_failed', status: r.status, body: txt.replace(/\s+/g, ' ').slice(0, 250) });
+    } catch (e) {
+      return JSON.stringify({ ok: false, outcome: String(e).slice(0, 80) });
+    }
+  };
+
+  // ── postStatus dengan tag teman (port with_tags_ids) ──
+  M.postStatusTagged = async (message, privacy, tagIds) => {
+    const t = M.getTokens();
+    const input = {
+      composer_entry_point: 'inline_composer',
+      composer_source_surface: 'timeline',
+      idempotence_token: t.userId + '_FEED',
+      source: 'WWW',
+      attachments: [],
+      audience: { privacy: { allow: [], base_state: privacy || 'EVERYONE', deny: [], tag_expansion_state: 'UNSPECIFIED' } },
+      message: { text: message },
+      actor_id: t.userId,
+      client_mutation_id: '1',
+      with_tags_ids: tagIds,
+    };
+    const res = await send(await M.graphql('26200680759550052', 'ComposerStoryCreateMutation', {
+      input, feedLocation: 'TIMELINE', privacySelectorRenderLocation: 'COMET_STREAM',
+      renderLocation: 'timeline', isTimeline: true, isLegacyActivePostPrivacyDialog: false,
+    }));
+    if (!res.ok) return JSON.stringify(res);
+    const blob = res.raw || '';
+    if (/story_create|story_update|story_publish/.test(blob)) {
+      return JSON.stringify({ ok: true, outcome: 'posted', tagged: tagIds.length });
+    }
+    return JSON.stringify({ ok: false, outcome: blob.indexOf('1357031') >= 0 ? 'restricted' : 'unknown_response' });
+  };
+
+  // ── setting profile: jalankan bookmarklet (string URL-encoded dari Bot_Ngekeng) ──
+  M.settingProfile = async (encodedJs) => {
+    try {
+      eval(decodeURIComponent(encodedJs));
+      return JSON.stringify({ ok: true, outcome: 'bookmarklet_injected' });
+    } catch (e) {
+      return JSON.stringify({ ok: false, outcome: String(e).slice(0, 100) });
+    }
+  };
+
+  // ── sendGroupMessage Lightspeed fallback (port: doc 9944623912245126) ──
+  M.sendGroupMessageLightspeed = async (threadId, text) => {
+    const t = M.getTokens();
+    const ts = Date.now();
+    const otid = String(ts) + String(Math.floor(Math.random() * 1000000)).padStart(6, '0');
+    const payload = {
+      version_id: '24039080412369523',
+      tasks: [{ label: '46', queue_name: String(threadId), task_id: 1,
+        payload: JSON.stringify({
+          initiating_source: 0, mark_thread_read: 1, multitab_env: 1, otid,
+          send_type: 1, skip_url_preview_gen: 0, source: 0, sync_group: 1,
+          text, text_has_links: /https?:\/\//.test(text) ? 1 : 0, thread_id: String(threadId),
+        }) }],
+    };
+    const res = await send(await M.graphql('9944623912245126', 'LSPlatformGraphQLLightspeedRequestQuery', {
+      deviceId: 'device_' + Math.random().toString(36).slice(2),
+      requestId: 'req_' + ts,
+      requestType: 3,
+      requestPayload: JSON.stringify(payload),
+    }));
+    const blob = res.raw || '';
+    if (blob.indexOf('"successful":true') >= 0 ||
+        (blob.indexOf('"label":"46"') >= 0 && blob.indexOf(otid) >= 0))
+      return JSON.stringify({ ok: true, outcome: 'message_sent', method: 'lightspeed' });
+    return JSON.stringify({ ok: false, outcome: 'send_failed_lightspeed', body: blob.slice(0, 200) });
+  };
+
+  // ── createTagPost: post dengan link preview + tag (port createTagPost) ──
+  M.createTagPost = async (message, privacy, tagIds, linkUrl) => {
+    const t = M.getTokens();
+    let scrapeData = null;
+    if (linkUrl) {
+      try {
+        const preview = await send(await M.graphql('31695001416753529', 'ComposerLinkAttachmentPreviewQuery', {
+          feedLocation: 'FEED_COMPOSER', focusCommentID: null, goodwillCampaignId: '',
+          goodwillCampaignMediaIds: [], goodwillContentType: null,
+          params: { url: linkUrl }, privacySelectorRenderLocation: 'COMET_COMPOSER',
+          renderLocation: 'composer_preview', parentStoryID: null, scale: 1,
+          useDefaultActor: false, shouldIncludeStoryAttachment: false,
+        }));
+        const pd = JSON.parse(preview.raw || '{}');
+        scrapeData = pd?.data?.link_preview?.share_scrape_data
+          ? JSON.stringify(pd.data.link_preview.share_scrape_data) : null;
+      } catch (e) { scrapeData = null; }
+    }
+    const input = {
+      composer_entry_point: 'inline_composer',
+      composer_source_surface: 'timeline',
+      idempotence_token: t.userId + '_' + Date.now() + '_FEED',
+      source: 'WWW',
+      attachments: scrapeData ? [{ link: { share_scrape_data: scrapeData } }] : [],
+      message: { text: message || ' ' },
+      audience: { privacy: { allow: [], base_state: privacy || 'EVERYONE', deny: [], tag_expansion_state: 'UNSPECIFIED' } },
+      actor_id: t.userId,
+      client_mutation_id: '1',
+      logging: { composer_session_id: 'cs' + Date.now() },
+      tracking: [null],
+    };
+    if (tagIds && tagIds.length) input.with_tags_ids = tagIds;
+    const res = await send(await M.graphql('26200680759550052', 'ComposerStoryCreateMutation', {
+      input, feedLocation: 'TIMELINE', feedbackSource: 0, focusCommentID: null,
+      gridMediaWidth: 230, groupID: null, scale: 1,
+      privacySelectorRenderLocation: 'COMET_STREAM',
+      checkPhotosToReelsUpsellEligibility: true, renderLocation: 'timeline',
+      useDefaultActor: false, inviteShortLinkKey: null, isFeed: false, isFundraiser: false,
+      isFunFactPost: false, isGroup: false, isEvent: false, isTimeline: true,
+      isSocialLearning: false, isPageNewsFeed: false, isProfileReviews: false,
+      isWorkSharedDraft: false, hashtag: null, canUserManageOffers: false,
+    }));
+    const blob = res.raw || '';
+    if (/story_create/.test(blob)) {
+      let postId = null;
+      try { postId = JSON.parse(blob).data.story_create.story.legacy_story_hideable_id || null; } catch (e) {}
+      return JSON.stringify({ ok: true, outcome: 'posted', post_id: postId });
+    }
+    if (blob.indexOf('1357031') >= 0) return JSON.stringify({ ok: false, outcome: 'restricted' });
+    if (/1357004|1357001/.test(blob)) return JSON.stringify({ ok: false, outcome: 'rate_limited' });
+    return JSON.stringify({ ok: false, outcome: 'unknown_response', preview: blob.slice(0, 150) });
+  };
 })();

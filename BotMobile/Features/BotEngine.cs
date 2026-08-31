@@ -9,6 +9,7 @@ public static class BotData
     {
         public List<string> Uids { get; set; } = new();
         public List<string> Links { get; set; } = new();
+        public List<string> GroupThreads { get; set; } = new(); // thread group yang dibuat di run sama (port target_added_member_groups)
     }
 
     public static RunContext Context { get; } = new();

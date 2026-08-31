@@ -75,6 +75,11 @@ public static class FeatureRegistry
         new ProfilePicFeature(),
         new SetBioFeature(),
         new ProModeFeature(),
+        new AddGroupMemberFeature(),
+        new SendGroupMessageFeature(),
+        new ChangeLocaleFeature(),
+        new TagFriendFeature(),
+        new SettingProfileFeature(),
         new PostStatusFeature(),    // legacy composer-based (belum tervalidasi)
     };
 

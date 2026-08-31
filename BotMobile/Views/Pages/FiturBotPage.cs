@@ -14,6 +14,7 @@ public class FiturBotPage : UserControl
 {
     private readonly MainWindow _main;
     private StackPanel _list = new();
+    private bool _syncing;
 
     public FiturBotPage(MainWindow main)
     {
@@ -33,6 +34,20 @@ public class FiturBotPage : UserControl
     }
 
     private void Rebuild()
+    {
+        if (_syncing) return; // anti-loop: event kontrol memicu rebuild balik
+        _syncing = true;
+        try
+        {
+            RebuildCore();
+        }
+        finally
+        {
+            _syncing = false;
+        }
+    }
+
+    private void RebuildCore()
     {
         // isi instance yang SUDAH ter-attach ke ScrollViewer (reassign = halaman blank)
         _list.Children.Clear();
@@ -100,7 +115,6 @@ public class FiturBotPage : UserControl
         }
         var toggle = new ToggleSwitch
         {
-            IsChecked = enabled,
             OnContent = null,
             OffContent = null,
             MinWidth = 40,
@@ -109,10 +123,12 @@ public class FiturBotPage : UserControl
         };
         toggle.IsCheckedChanged += (_, _) =>
         {
+            if (_syncing) return;
             row.Config.Enabled = toggle.IsChecked == true;
             _main.SaveFeatures();
             Rebuild();
         };
+        toggle.IsChecked = enabled; // set SETELAH handler (biar tak memicu loop)
         right.Children.Add(toggle);
 
         var gear = new Button { Content = "⚙", Width = 30, Height = 28, FontSize = 13 };
