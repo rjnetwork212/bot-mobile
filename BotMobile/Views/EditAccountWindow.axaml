@@ -1,0 +1,35 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="BotMobile.Views.EditAccountWindow"
+        Title="Edit Akun" Width="460" SizeToContent="Height"
+        CanResize="False" WindowStartupLocation="CenterOwner">
+
+  <StackPanel Margin="14" Spacing="10">
+    <StackPanel Spacing="4">
+      <TextBlock Text="UID" />
+      <TextBox x:Name="TxtUid" />
+    </StackPanel>
+    <StackPanel Spacing="4">
+      <TextBlock Text="Password" />
+      <TextBox x:Name="TxtPassword" />
+    </StackPanel>
+    <StackPanel Spacing="4">
+      <TextBlock Text="Email (opsional)" />
+      <TextBox x:Name="TxtEmail" />
+    </StackPanel>
+    <StackPanel Spacing="4">
+      <TextBlock Text="Secret 2FA (opsional, base32)" />
+      <TextBox x:Name="Txt2Fa" />
+    </StackPanel>
+    <StackPanel Spacing="4">
+      <TextBlock Text="Cookies (format: name=value; name=value — opsional)" />
+      <TextBox x:Name="TxtCookies" Height="110" TextWrapping="Wrap"
+               AcceptsReturn="True" TextChanged="OnCookiesChanged" />
+      <TextBlock x:Name="TxtCookieInfo" Foreground="Gray" FontSize="11" />
+    </StackPanel>
+    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+      <Button x:Name="BtnOk" Content="Simpan" Click="OnOk" />
+      <Button Content="Batal" Click="OnCancel" />
+    </StackPanel>
+  </StackPanel>
+</Window>
