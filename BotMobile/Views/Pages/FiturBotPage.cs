@@ -34,7 +34,8 @@ public class FiturBotPage : UserControl
 
     private void Rebuild()
     {
-        _list = new StackPanel { Spacing = 10 };
+        // isi instance yang SUDAH ter-attach ke ScrollViewer (reassign = halaman blank)
+        _list.Children.Clear();
         foreach (var row in _main.FeatureRows)
         {
             _list.Children.Add(BuildCard(row));
@@ -61,7 +62,7 @@ public class FiturBotPage : UserControl
         left.Children.Add(new TextBlock { Text = row.Description, FontSize = 11.5, Foreground = new SolidColorBrush(Color.Parse("#849396") ), TextWrapping = TextWrapping.Wrap, MaxWidth = 560 });
         left.Children.Add(new Border
         {
-            Background = new SolidColorBrush(Color.Parse(modeColor + "1A")),
+            Background = new SolidColorBrush(Color.Parse(modeColor), 0.10),
             CornerRadius = new CornerRadius(3),
             Padding = new Thickness(7, 2),
             HorizontalAlignment = HorizontalAlignment.Left,
@@ -140,7 +141,7 @@ public class FiturBotPage : UserControl
         return new Border
         {
             Background = new SolidColorBrush(Color.Parse("#101827")),
-            BorderBrush = new SolidColorBrush(Color.Parse(enabled ? "#00E5FF40" : "#1A2333")),
+            BorderBrush = new SolidColorBrush(enabled ? Color.Parse("#00E5FF") : Color.Parse("#1A2333"), enabled ? 0.35 : 1.0),
             BorderThickness = new Thickness(1, 1, 1, 1),
             CornerRadius = new CornerRadius(4),
             Padding = new Thickness(14, 10),
